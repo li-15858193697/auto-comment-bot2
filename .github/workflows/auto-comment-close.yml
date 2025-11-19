@@ -4,45 +4,65 @@ on:
   issues:
     types: [opened, labeled]
 
+permissions:
+  issues: write
+  contents: read
+
 jobs:
   auto-comment-close:
     runs-on: ubuntu-latest
     
     steps:
-      - name: Check if issue has feedback or suggestion label
+      - name: Check labels and process
         id: check-labels
         run: |
-          # Get labels from the issue
-          LABELS="${{ join(github.event.issue.labels.*.name, ',') }}"
-          echo "Labels: $LABELS"
+          # Debug: Print all labels
+          echo "Event action: ${{ github.event.action }}"
+          echo "Issue labels: ${{ join(github.event.issue.labels.*.name, ', ') }}"
           
-          # Check if labels contain feedback or suggestion
-          if [[ "$LABELS" == *"feedback"* ]] || [[ "$LABELS" == *"suggestion"* ]]; then
-            echo "has_target_label=true" >> $GITHUB_OUTPUT
+          # Check if issue has feedback or suggestion label
+          HAS_FEEDBACK=false
+          HAS_SUGGESTION=false
+          
+          # Loop through labels (if any)
+          LABELS="${{ join(github.event.issue.labels.*.name, ',') }}"
+          if [[ "$LABELS" == *"feedback"* ]]; then
+            HAS_FEEDBACK=true
+          fi
+          if [[ "$LABELS" == *"suggestion"* ]]; then
+            HAS_SUGGESTION=true
+          fi
+          
+          if [[ "$HAS_FEEDBACK" == "true" || "$HAS_SUGGESTION" == "true" ]]; then
+            echo "should_process=true" >> $GITHUB_OUTPUT
+            echo "Found feedback or suggestion label"
           else
-            echo "has_target_label=false" >> $GITHUB_OUTPUT
+            echo "should_process=false" >> $GITHUB_OUTPUT
+            echo "No feedback or suggestion label found"
           fi
           
       - name: Add thank you comment
-        if: steps.check-labels.outputs.has_target_label == 'true'
+        if: steps.check-labels.outputs.should_process == 'true'
         uses: actions/github-script@v7
         with:
           script: |
-            github.rest.issues.createComment({
+            console.log('Adding comment to issue #' + context.issue.number);
+            await github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
               body: 'Thank you for your contribution!'
-            })
+            });
             
       - name: Close the issue
-        if: steps.check-labels.outputs.has_target_label == 'true'
+        if: steps.check-labels.outputs.should_process == 'true'
         uses: actions/github-script@v7
         with:
           script: |
-            github.rest.issues.update({
+            console.log('Closing issue #' + context.issue.number);
+            await github.rest.issues.update({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
               state: 'closed'
-            })
+            });
